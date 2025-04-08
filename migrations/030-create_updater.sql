@@ -1,0 +1,2 @@
+CREATE USER updater WITH PASSWORD 'QacAdopva3aF8GJx9myT7QygkziQ5PAb';
+GRANT INSERT, TRUNCATE ON TABLE activity_log TO updater;
