@@ -54,7 +54,7 @@ def parse_activities(p: Path) -> list[HeartrateData]:
         if not d.is_dir():
             continue
         for f in d.iterdir():
-            parse_file(f)
+            result.append(parse_file(f))
     return result
 
 
@@ -107,8 +107,8 @@ class Watcher(watchdog.events.FileSystemEventHandler):
         if event.is_directory:
             return
         logging.info("Created file: %s", event.src_path)
-        act = parse_file(event.src_path)
-        with conn.cursor() as cur:
+        act = parse_file(Path(event.src_path))
+        with self.conn.cursor() as cur:
             cur.execute(
                 insert_query(),
                 (
@@ -119,7 +119,7 @@ class Watcher(watchdog.events.FileSystemEventHandler):
                     act.maxHR,
                 ),
             )
-        conn.commit()
+        self.conn.commit()
 
 
 def watch():
@@ -131,12 +131,9 @@ def watch():
 
     connection_string = f"host={dbhost} password={dbpass} user={dbuser} dbname={dbname}"
 
-    watchpath = os.getenv("WATCHPATH")
+    watchpath = Path(os.getenv("WATCHPATH"))
 
-    act = parse_activities(Path(watchpath))
-    connection_string = f"host={dbhost} password={dbpass} user={dbuser} dbname={dbname}"
-    logging.info("Connection string: %s", connection_string)
-    apply_to_db(act, connection_string)
+    dump_all(path=watchpath, dbhost=dbhost, dbpass=dbpass, dbuser=dbuser, dbname=dbname)
 
     with psycopg.connect(connection_string) as conn:
 
@@ -144,21 +141,20 @@ def watch():
         observer.schedule(Watcher(conn), watchpath, recursive=True)
         observer.start()
         try:
+            logging.info("Listening")
             while observer.is_alive():
+
                 observer.join(1)
         finally:
             observer.stop()
             observer.join()
 
 
-def dump_all():
-    dbhost = os.getenv("DBHOST", "localhost")
-    dbpass = os.getenv("DBPASS")
-    dbuser = os.getenv("DBUSER")
-    dbname = os.getenv("DBNAME", "postgres")
-    act = parse_activities()
+def dump_all(path: Path, dbhost: str, dbpass: str, dbuser: str, dbname: str):
+    act = parse_activities(path)
     connection_string = f"host={dbhost} password={dbpass} user={dbuser} dbname={dbname}"
     logging.info("Connection string: %s", connection_string)
+    logging.info("#activities: %s", len(act))
     apply_to_db(act, connection_string)
 
 
