@@ -7,8 +7,6 @@ import datetime
 import psycopg
 from psycopg import sql
 import os
-from watchdog.observers import Observer
-import watchdog.events
 import logging
 
 
@@ -95,61 +93,6 @@ def apply_to_db(data: list[HeartrateData], db_connection_string: str):
             )
 
 
-class Watcher(watchdog.events.FileSystemEventHandler):
-    """Logs all the events captured."""
-
-    def __init__(self, conn):
-        super().__init__()
-        self.conn = conn
-
-    def on_created(self, event):
-        super().on_created(event)
-        if event.is_directory:
-            return
-        logging.info("Created file: %s", event.src_path)
-        act = parse_file(Path(event.src_path))
-        with self.conn.cursor() as cur:
-            cur.execute(
-                insert_query(),
-                (
-                    act.time.isoformat(),
-                    act.activeSeconds,
-                    act.activityType.name,
-                    act.averageHR,
-                    act.maxHR,
-                ),
-            )
-        self.conn.commit()
-
-
-def watch():
-
-    dbhost = os.getenv("DBHOST", "localhost")
-    dbpass = os.getenv("DBPASS")
-    dbuser = os.getenv("DBUSER")
-    dbname = os.getenv("DBNAME", "postgres")
-
-    connection_string = f"host={dbhost} password={dbpass} user={dbuser} dbname={dbname}"
-
-    watchpath = Path(os.getenv("WATCHPATH"))
-
-    dump_all(path=watchpath, dbhost=dbhost, dbpass=dbpass, dbuser=dbuser, dbname=dbname)
-
-    with psycopg.connect(connection_string) as conn:
-
-        observer = Observer()
-        observer.schedule(Watcher(conn), watchpath, recursive=True)
-        observer.start()
-        try:
-            logging.info("Listening")
-            while observer.is_alive():
-
-                observer.join(1)
-        finally:
-            observer.stop()
-            observer.join()
-
-
 def dump_all(path: Path, dbhost: str, dbpass: str, dbuser: str, dbname: str):
     act = parse_activities(path)
     connection_string = f"host={dbhost} password={dbpass} user={dbuser} dbname={dbname}"
@@ -164,7 +107,14 @@ def main():
         format="%(asctime)s - %(message)s",
         datefmt="%Y-%m-%d %H:%M:%S",
     )
-    watch()
+
+    dbhost = os.getenv("DBHOST", "localhost")
+    dbpass = os.environ["DBPASS"]
+    dbuser = os.environ["DBUSER"]
+    dbname = os.getenv("DBNAME", "postgres")
+    watchpath = Path(os.environ["WATCHPATH"])
+
+    dump_all(watchpath, dbhost, dbpass, dbuser, dbname)
 
 
 if __name__ == "__main__":
